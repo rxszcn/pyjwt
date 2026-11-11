@@ -18,6 +18,11 @@ class SigOptions(TypedDict, total=False):
 class Options(TypedDict, total=False):
     """Options for :py:func:`jwt.decode()` and :py:func:`jwt.decode_complete()` (TypedDict).
 
+    Unknown keys and non-boolean values for the ``verify_*`` switches raise
+    :py:class:`jwt.exceptions.InvalidConfigurationError` instead of being
+    silently ignored. This catches misspellings such as ``verify_expiry``
+    which would otherwise leave the intended check disabled.
+
     .. warning::
 
         Some claims, such as ``exp``, ``iat``, ``jti``, ``nbf``, and ``sub``,

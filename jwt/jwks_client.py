@@ -6,6 +6,7 @@ import math
 import threading
 import time
 import urllib.request
+from collections.abc import Iterable, Mapping
 from functools import lru_cache
 from ssl import SSLContext
 from typing import Any
@@ -15,6 +16,7 @@ from urllib.parse import urlparse
 from .api_jwk import PyJWK, PyJWKSet
 from .api_jwt import decode_complete as decode_token
 from .exceptions import PyJWKClientConnectionError, PyJWKClientError
+from .hardening import JWKSUrlPolicy, resolve_jwks_uri
 from .jwk_set_cache import JWKSetCache
 
 
@@ -43,6 +45,7 @@ class PyJWKClient:
         timeout: float = 30,
         ssl_context: SSLContext | None = None,
         cooldown_duration: float = 30,
+        url_policy: JWKSUrlPolicy | None = None,
     ):
         """A client for retrieving signing keys from a JWKS endpoint.
 
@@ -96,6 +99,11 @@ class PyJWKClient:
         :param cooldown_duration: Minimum time in seconds between forced
             refreshes after an unknown key ID. Defaults to ``30``.
         :type cooldown_duration: float
+        :param url_policy: Optional :class:`~jwt.hardening.JWKSUrlPolicy`
+            used to validate ``uri`` before it is fetched. Use this when the
+            URL is derived from an unverified token header; see
+            :meth:`from_token_header`.
+        :type url_policy: JWKSUrlPolicy or None
         """
         if headers is None:
             headers = {}
@@ -109,7 +117,12 @@ class PyJWKClient:
                 f"Invalid JWKS URI scheme {scheme!r}: only 'http' and 'https' "
                 f"are supported."
             )
+        if url_policy is not None:
+            # Fail at construction time so a misconfigured/attacker-supplied
+            # URL never even reaches the fetch path.
+            url_policy.validate(uri)
         self.uri = uri
+        self.url_policy = url_policy
         self.jwk_set_cache: JWKSetCache | None = None
         self.headers = headers
         self.timeout = timeout
@@ -144,6 +157,60 @@ class PyJWKClient:
             # Ignore mypy (https://github.com/python/mypy/issues/2427)
             self.get_signing_key = get_signing_key  # type: ignore[method-assign]
 
+    @classmethod
+    def from_token_header(
+        cls,
+        token_or_header: str | bytes | Mapping[str, Any],
+        *,
+        allowed_origins: Iterable[str] | None,
+        allow_private_addresses: bool = False,
+        require_https: bool = True,
+        resolve_dns: bool = True,
+        **kwargs: Any,
+    ) -> PyJWKClient:
+        """Build a client from an unverified token's ``jku`` header, safely.
+
+        A ``jku`` value is attacker-controlled until the signature has been
+        verified, so this constructor requires an explicit origin allow-list.
+        Unlike a bare ``PyJWKClient(header["jku"])``, it will not follow a URL
+        pointing at an arbitrary host, an internal address, or plain HTTP.
+
+        :param token_or_header: An encoded token or an already-decoded header
+            mapping. The header is treated as untrusted.
+        :param allowed_origins: Non-empty list of trusted origins, e.g.
+            ``["https://issuer.example"]``.
+        :param allow_private_addresses: Permit non-public addresses. Only use
+            this for an intentionally internal endpoint which is also pinned
+            by ``allowed_origins``.
+        :param require_https: Require the ``https`` scheme.
+        :param resolve_dns: Resolve host names and reject any non-public
+            address. See :class:`~jwt.hardening.JWKSUrlPolicy`.
+        :raises InvalidConfigurationError: If no usable allow-list is given.
+        :raises PyJWKClientError: If the header has no valid ``jku`` value.
+        :raises InsecureJWKSUrlError: If the URL fails the policy.
+        """
+        if isinstance(token_or_header, Mapping):
+            header = token_or_header
+        else:
+            header = decode_token(
+                token_or_header, options={"verify_signature": False}
+            )["header"]
+
+        uri = resolve_jwks_uri(
+            header,
+            allowed_origins=allowed_origins,
+            allow_private_addresses=allow_private_addresses,
+            require_https=require_https,
+            resolve_dns=resolve_dns,
+        )
+        policy = JWKSUrlPolicy(
+            allowed_origins=allowed_origins,
+            require_https=require_https,
+            allow_private_addresses=allow_private_addresses,
+            resolve_dns=resolve_dns,
+        )
+        return cls(uri, url_policy=policy, **kwargs)
+
     def fetch_data(self) -> Any:
         """Fetch the JWK Set from the JWKS endpoint.
 
@@ -159,6 +226,11 @@ class PyJWKClient:
             response contains no usable keys.
         """
         try:
+            if self.url_policy is not None:
+                # Re-check on every fetch: ``self.uri`` is writable and a
+                # subclass may override fetch_data(), so construction-time
+                # validation alone is not sufficient.
+                self.url_policy.validate(self.uri)
             r = urllib.request.Request(url=self.uri, headers=self.headers)
             handlers: list[Any] = [_NoRedirectHandler()]
             if self.ssl_context is not None:

@@ -20,6 +20,7 @@ from .exceptions import (
     InvalidSubjectError,
     MissingRequiredClaimError,
 )
+from .hardening import validate_options
 from .warnings import RemovedInPyjwt3Warning
 
 if TYPE_CHECKING or bool(os.getenv("SPHINX_BUILD", "")):
@@ -40,13 +41,32 @@ if TYPE_CHECKING or bool(os.getenv("SPHINX_BUILD", "")):
 
 
 class PyJWT:
-    def __init__(self, options: Options | None = None) -> None:
+    def __init__(
+        self, options: Options | None = None, *, strict_options: bool = True
+    ) -> None:
+        """Create a reusable verifier.
+
+        :param options: default decoding options for every call. Unknown keys
+            and ambiguous values are rejected (see ``strict_options``).
+        :param strict_options: When ``True`` (the default), unknown/misspelled
+            option keys and non-boolean values raise
+            :class:`~jwt.exceptions.InvalidConfigurationError`. Set to
+            ``False`` only as a temporary compatibility escape hatch; it
+            restores the historical silent-ignore behaviour.
+        """
+        # Strict option validation rejects unknown keys (typos) and
+        # ambiguous values instead of silently ignoring them. Pass
+        # strict_options=False only as a temporary compatibility escape hatch.
+        self.strict_options = bool(strict_options)
         self.options: FullOptions
         self.options = self._get_default_options()
         if options is not None:
             self.options = self._merge_options(options)
 
-        self._jws = PyJWS(options=self._get_sig_options())
+        self._jws = PyJWS(
+            options=self._get_sig_options(),
+            strict_options=self.strict_options,
+        )
 
     @staticmethod
     def _get_default_options() -> FullOptions:
@@ -76,7 +96,15 @@ class PyJWT:
         if options is None:
             return self.options
 
-        merged_options = cast("Options", dict(options))
+        # Raises InvalidConfigurationError for unknown keys (e.g. a
+        # ``verify_expiry`` typo) and for values whose truthiness would
+        # silently change which checks run.
+        merged_options = cast(
+            "Options",
+            validate_options(
+                options, strict=self.strict_options, source="options"
+            ),
+        )
 
         # (defensive) set defaults for verify_x to False if verify_signature is False
         if not merged_options.get("verify_signature", True):
@@ -239,10 +267,20 @@ class PyJWT:
                 stacklevel=2,
             )
 
-        if options is None:
-            verify_signature = True
-        else:
-            verify_signature = options.get("verify_signature", True)
+        # Validate before reading values so a mistyped/unknown option fails
+        # closed instead of being silently dropped. The validated copy is
+        # also what gets merged below; the caller's mapping is untouched.
+        validated_options = validate_options(
+            options, strict=self.strict_options, source="options"
+        )
+        merged_options = self._merge_options(validated_options)
+
+        # Use the *effective* merged value (including options configured on
+        # the PyJWT instance), not a hard-coded default. Previously an
+        # instance-level ``verify_signature=False`` was silently ignored
+        # during decode_complete(), so the configured value did not describe
+        # what actually ran.
+        verify_signature = merged_options["verify_signature"]
 
         # If the user has set the legacy `verify` argument, and it doesn't match
         # what the relevant `options` entry for the argument is, inform the user
@@ -255,8 +293,6 @@ class PyJWT:
                 category=DeprecationWarning,
                 stacklevel=2,
             )
-
-        merged_options = self._merge_options(options)
 
         sig_options: SigOptions = {
             "verify_signature": verify_signature,

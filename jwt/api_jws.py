@@ -20,6 +20,7 @@ from .exceptions import (
     InvalidSignatureError,
     InvalidTokenError,
 )
+from .hardening import normalize_algorithms, validate_options
 from .utils import base64url_decode, base64url_encode
 from .warnings import InsecureKeyLengthWarning, RemovedInPyjwt3Warning
 
@@ -40,10 +41,28 @@ class PyJWS:
         self,
         algorithms: Sequence[str] | None = None,
         options: SigOptions | None = None,
+        *,
+        strict_options: bool = True,
     ) -> None:
+        """Create a reusable JWS codec.
+
+        :param algorithms: Optional allow-list of algorithm names. A bare
+            string is treated as one exact algorithm name. The allow-list also
+            applies to keys supplied as :class:`~jwt.PyJWK`.
+        :param options: default signature options.
+        :param strict_options: When ``True`` (the default), unknown option
+            keys and ambiguous values raise
+            :class:`~jwt.exceptions.InvalidConfigurationError`.
+        """
         self._algorithms = get_default_algorithms()
+        # A bare string is a common way to configure a single algorithm, but
+        # iterating it would produce one entry per character. Normalise to an
+        # exact list first so the allow-list means what the caller intended.
+        normalized_algorithms = normalize_algorithms(algorithms, source="algorithms")
         self._valid_algs = (
-            set(algorithms) if algorithms is not None else set(self._algorithms)
+            set(normalized_algorithms)
+            if normalized_algorithms is not None
+            else set(self._algorithms)
         )
 
         # Remove algorithms that aren't on the whitelist
@@ -51,9 +70,13 @@ class PyJWS:
             if key not in self._valid_algs:
                 del self._algorithms[key]
 
+        self.strict_options = bool(strict_options)
         self.options: SigOptions = self._get_default_options()
         if options is not None:
-            self.options = {**self.options, **options}
+            validated_options = validate_options(
+                options, strict=self.strict_options, source="options"
+            )
+            self.options = {**self.options, **validated_options}
 
     @staticmethod
     def _get_default_options() -> SigOptions:
@@ -240,9 +263,14 @@ class PyJWS:
         if options is None:
             merged_options = self.options
         else:
-            merged_options = {**self.options, **options}
+            validated_options = validate_options(
+                options, strict=self.strict_options, source="options"
+            )
+            merged_options = {**self.options, **validated_options}
 
         verify_signature = merged_options["verify_signature"]
+
+        algorithms = normalize_algorithms(algorithms, source="algorithms")
 
         if verify_signature and not algorithms and not isinstance(key, PyJWK):
             raise DecodeError(
@@ -405,14 +433,19 @@ class PyJWS:
     ) -> None:
         effective_options = options if options is not None else self.options
 
+        algorithms = normalize_algorithms(algorithms, source="algorithms")
         if algorithms is None and isinstance(key, PyJWK):
-            algorithms = [key.algorithm_name]
+            algorithms = (key.algorithm_name,)
         try:
             alg = header["alg"]
         except KeyError:
             raise InvalidAlgorithmError("Algorithm not specified") from None
 
-        if not alg or (algorithms is not None and alg not in algorithms):
+        if (
+            not isinstance(alg, str)
+            or not alg
+            or (algorithms is not None and alg not in algorithms)
+        ):
             raise InvalidAlgorithmError("The specified alg value is not allowed")
 
         if isinstance(key, PyJWK):
@@ -425,6 +458,15 @@ class PyJWS:
                 raise InvalidAlgorithmError(
                     f"Token algorithm {alg!r} does not match the key's "
                     f"algorithm {key.algorithm_name!r}"
+                )
+            # The algorithm bound to the key must also satisfy the allow-list
+            # this PyJWS instance was constructed with.  Without this check the
+            # PyJWK path would verify tokens using algorithms the instance was
+            # explicitly told to remove.
+            if key.algorithm_name not in self._valid_algs:
+                raise InvalidAlgorithmError(
+                    f"Algorithm {key.algorithm_name!r} is not allowed by this "
+                    "PyJWS instance"
                 )
             alg_obj = key.Algorithm
             prepared_key = alg_obj.prepare_key(key.key)

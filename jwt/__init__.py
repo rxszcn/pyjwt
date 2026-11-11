@@ -11,8 +11,10 @@ from .exceptions import (
     DecodeError,
     ExpiredSignatureError,
     ImmatureSignatureError,
+    InsecureJWKSUrlError,
     InvalidAlgorithmError,
     InvalidAudienceError,
+    InvalidConfigurationError,
     InvalidIssuedAtError,
     InvalidIssuerError,
     InvalidKeyError,
@@ -24,6 +26,14 @@ from .exceptions import (
     PyJWKError,
     PyJWKSetError,
     PyJWTError,
+)
+from .hardening import (
+    AuditFinding,
+    JWKSUrlPolicy,
+    audit_verification_config,
+    normalize_algorithms,
+    resolve_jwks_uri,
+    validate_options,
 )
 from .jwks_client import PyJWKClient
 from .warnings import InsecureKeyLengthWarning
@@ -56,14 +66,23 @@ __all__ = [
     "register_algorithm",
     "unregister_algorithm",
     "get_algorithm_by_name",
+    # Hardening helpers
+    "AuditFinding",
+    "JWKSUrlPolicy",
+    "audit_verification_config",
+    "normalize_algorithms",
+    "resolve_jwks_uri",
+    "validate_options",
     # Warnings
     "InsecureKeyLengthWarning",
     # Exceptions
     "DecodeError",
     "ExpiredSignatureError",
     "ImmatureSignatureError",
+    "InsecureJWKSUrlError",
     "InvalidAlgorithmError",
     "InvalidAudienceError",
+    "InvalidConfigurationError",
     "InvalidIssuedAtError",
     "InvalidIssuerError",
     "InvalidKeyError",

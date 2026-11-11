@@ -34,6 +34,13 @@ API Reference
     :class-doc-from: init
     :members:
 
+Hardening Helpers
+-----------------
+
+.. automodule:: jwt.hardening
+    :members: AuditFinding, JWKSUrlPolicy, audit_verification_config, normalize_algorithms, resolve_jwks_uri, validate_options
+    :show-inheritance:
+
 .. note:: TODO: Finish documenting PyJWS class
 .. module:: jwt.api_jws
 

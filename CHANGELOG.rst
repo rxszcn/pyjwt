@@ -7,6 +7,38 @@ This project adheres to `Semantic Versioning <https://semver.org/>`__.
 `Unreleased <https://github.com/jpadilla/pyjwt/compare/2.15.1...HEAD>`__
 -------------------------------------------------------------------------
 
+Security
+~~~~~~~~
+
+- Verification options are now validated strictly by default: unknown keys
+  (typos such as ``verify_expiry``) and ambiguous non-boolean values raise
+  ``InvalidConfigurationError`` instead of being silently ignored. Existing
+  correctly typed configurations are unaffected; ``strict_options=False`` is
+  available as an explicit compatibility escape hatch.
+- The ``algorithms`` allow-list is normalised to an exact-match tuple for
+  every accepted container shape. A bare string is treated as one algorithm
+  name, so a substring such as ``"HS384HS256"`` no longer admits an
+  ``HS256`` token.
+- The algorithm bound to a ``PyJWK`` must satisfy the allow-list configured
+  on the ``PyJWS`` instance, closing the path where a key's algorithm
+  bypassed an instance-level allow-list.
+- Instance-level options are honoured by ``decode_complete()``; previously an
+  instance ``verify_signature=False`` was replaced by a hard-coded default.
+- Add ``JWKSUrlPolicy`` and ``PyJWKClient.from_token_header()`` for safely
+  following a ``jku`` header: an explicit origin allow-list is required, HTTPS
+  is the default, and private/loopback/link-local/reserved addresses are
+  rejected. Fixed-URL clients keep their historical behaviour when no policy
+  is supplied.
+
+Added
+~~~~~
+
+- Add ``jwt.audit_verification_config()``, which reports configuration that
+  claims a constraint but does not actually enforce it (unknown options,
+  enabled checks whose claim is not required, missing or mixed algorithm
+  allow-lists, and the ``none`` algorithm).
+- Add ``InvalidConfigurationError`` and ``InsecureJWKSUrlError`` exceptions.
+
 Changed
 ~~~~~~~
 

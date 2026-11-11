@@ -6,6 +6,17 @@ class PyJWTError(Exception):
     pass
 
 
+class InvalidConfigurationError(PyJWTError, ValueError):
+    """Raised when a verification configuration is ambiguous, misspelled or
+    otherwise unsafe.
+
+    Subclasses :class:`ValueError` so that callers which validate
+    configuration with ordinary value checks keep working.
+    """
+
+    pass
+
+
 class InvalidTokenError(PyJWTError):
     """Base exception when ``decode()`` fails on a token"""
 
@@ -98,6 +109,17 @@ class PyJWKClientError(PyJWTError):
 
 
 class PyJWKClientConnectionError(PyJWKClientError):
+    pass
+
+
+class InsecureJWKSUrlError(PyJWKClientError):
+    """Raised when a JWKS URL is not permitted by the configured URL policy.
+
+    This covers non-HTTPS URLs, URLs outside the configured origin
+    allow-list, and URLs which resolve to private, loopback, link-local or
+    otherwise non-public addresses.
+    """
+
     pass
 
 

@@ -473,6 +473,68 @@ If you wish to require one or more claims to be present in the claimset, you can
     ...
     Token is missing the "exp" claim
 
+Validating the Verification Configuration
+-----------------------------------------
+
+Verification options are validated before any token processing happens.
+Unknown keys (for example ``verify_expiry`` or ``verify_nfb`` instead of the
+canonical ``verify_exp`` / ``verify_nbf``) and ambiguous values raise
+:class:`~jwt.exceptions.InvalidConfigurationError` instead of being silently
+ignored:
+
+.. code-block:: pycon
+
+    >>> import jwt
+    >>> try:
+    ...     jwt.decode(
+    ...         token,
+    ...         "secret",
+    ...         algorithms=["HS256"],
+    ...         options={"verify_signature": False, "verify_expiry": True},
+    ...     )
+    ... except jwt.InvalidConfigurationError as e:
+    ...     print(e)
+    ...
+    Unrecognized options key(s): 'verify_expiry' Did you mean 'verify_exp'? ...
+
+Only ``True``/``False`` (or the historical ``0``/``1``) are accepted for the
+``verify_*`` switches. Values such as ``None`` or ``"false"`` are rejected
+because their truthiness can silently change which checks run.
+
+The ``algorithms`` allow-list is always an exact match. A bare string is
+treated as one algorithm name (so ``algorithms="HS256"`` keeps working), not
+as a substring to search, and every supported container shape (list, tuple,
+set, mapping, iterator) is normalised to the same exact-match check.
+
+All options configured on a ``PyJWT`` instance are effective when ``decode()``
+is called without per-call options. Per-call options still take precedence.
+
+To detect configurations which *look* constrained but are not, audit them at
+startup (or in a test):
+
+.. code-block:: python
+
+    import jwt
+
+    findings = jwt.audit_verification_config(
+        {"verify_exp": True},
+        algorithms=["HS256"],
+        audience="my-api",
+    )
+    for finding in findings:
+        print(finding.severity, finding.code, finding.message)
+
+The audit reports, among other things, an option that is enabled but whose
+claim is not listed in ``require`` (so a token can simply omit it), a missing
+or mixed algorithm allow-list, and the ``none`` algorithm. It is the
+"detection" half of the checks; the runtime validation above is the
+"hardening" half.
+
+Integrations which cannot be updated immediately can opt out of the strict
+option validation with ``PyJWT(options=..., strict_options=False)``. This
+reproduces the historical ignore-unknown-keys behaviour and should only be
+used as a temporary migration aid.
+
 Retrieve RSA signing keys from a JWKS endpoint
 ----------------------------------------------
 
@@ -517,6 +579,28 @@ an error.
 ``PyJWKClient`` also includes built-in caching to avoid unnecessary network
 requests. See :class:`~jwt.PyJWKClient` in the API reference for details on
 the caching parameters.
+
+Never build a client from an unverified token header without a trust policy.
+A ``jku`` value is attacker-controlled until the signature has been verified,
+so it could point at an internal address or another unintended host. Use
+:meth:`~jwt.PyJWKClient.from_token_header` with an explicit origin allow-list;
+it requires HTTPS by default, rejects URLs outside the allow-list, and refuses
+to fetch from private, loopback, link-local or otherwise non-public addresses:
+
+.. code-block:: python
+
+    import jwt
+
+    client = jwt.PyJWKClient.from_token_header(
+        token,
+        allowed_origins=["https://issuer.example"],
+    )
+    signing_key = client.get_signing_key_from_jwt(token)
+
+The same policy can be applied to a directly configured URL with
+``PyJWKClient(url, url_policy=jwt.JWKSUrlPolicy(...))``. A plain
+``PyJWKClient(url)`` keeps its historical behaviour, because the URL is then
+treated as trusted application configuration rather than token-driven input.
 
 OIDC Login Flow
 ---------------
