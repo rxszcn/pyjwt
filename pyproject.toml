@@ -1,0 +1,142 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = [
+    "setuptools>=77.0.3",
+]
+
+[dependency-groups]
+dev = [
+    "coverage[toml]==7.10.7",
+    "cryptography>=3.4.0",
+    "pre-commit",
+    "pytest>=8.4.2,<9.0.0",
+    "sphinx",
+    "sphinx-rtd-theme",
+    "zope.interface",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+    "zope.interface",
+]
+tests = [
+    "coverage[toml]==7.10.7",
+    "pytest>=8.4.2,<9.0.0",
+]
+
+[project]
+authors = [
+    { email = "hello@jpadilla.com", name = "Jose Padilla" },
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Natural Language :: English",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "typing_extensions >= 4.0; python_version < '3.11'",
+]
+description = "JSON Web Token implementation in Python"
+dynamic = [
+    "version",
+]
+keywords = [
+    "json",
+    "jwt",
+    "security",
+    "signing",
+    "token",
+    "web",
+]
+license = "MIT"
+name = "PyJWT"
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+crypto = [
+    "cryptography>=3.4.0",
+]
+
+[project.readme]
+content-type = "text/x-rst"
+file = "README.rst"
+
+[project.urls]
+Homepage = "https://github.com/jpadilla/pyjwt"
+
+[tool.coverage.paths]
+source = [
+    "*/site-packages",
+    "jwt",
+]
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING",
+]
+skip_covered = true
+
+[tool.coverage.run]
+branch = true
+parallel = true
+relative_files = true
+source = [
+    "jwt",
+    "tests",
+]
+
+[tool.mypy]
+files = [
+    "jwt",
+    "tests",
+]
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = [
+    "cryptography",
+    "cryptography.*",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+filterwarnings = [
+    "error",
+    "ignore::jwt.warnings.InsecureKeyLengthWarning",
+]
+testpaths = [
+    "tests",
+]
+
+[tool.setuptools]
+include-package-data = true
+zip-safe = false
+
+[tool.setuptools.dynamic.version]
+attr = "jwt.__version__"
+
+[tool.setuptools.package-data]
+"*" = [
+    "py.typed",
+]
+
+[tool.setuptools.packages.find]
+exclude = [
+    "tests",
+    "tests.*",
+]
+namespaces = false
